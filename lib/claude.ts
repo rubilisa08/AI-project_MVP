@@ -18,6 +18,11 @@ function getClient(): Anthropic {
 
 const DEFAULT_MODEL = process.env.CLAUDE_MODEL || "claude-sonnet-5";
 
+/** When true, callClaudeJSON skips the real API call and uses each call site's `mock` fallback instead — lets the pipeline run end-to-end with no ANTHROPIC_API_KEY. */
+export function isMockMode(): boolean {
+  return process.env.MOCK_LLM === "true";
+}
+
 /**
  * Calls Claude with a single forced tool call so the response is guaranteed
  * to be a JSON object matching `schema`. Retries once with the validation
@@ -28,8 +33,15 @@ export async function callClaudeJSON<T extends z.ZodTypeAny>(params: {
   prompt: string;
   schema: T;
   maxTokens?: number;
+  /** Used instead of the real API call when MOCK_LLM=true. */
+  mock: () => z.infer<T>;
 }): Promise<z.infer<T>> {
-  const { system, prompt, schema, maxTokens = 2000 } = params;
+  const { system, prompt, schema, maxTokens = 2000, mock } = params;
+
+  if (isMockMode()) {
+    return mock();
+  }
+
   const anthropic = getClient();
   const inputSchema = z.toJSONSchema(schema, { target: "draft-07" });
 

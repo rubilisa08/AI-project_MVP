@@ -1,6 +1,6 @@
 import { callClaudeJSON } from "@/lib/claude";
 import { FactCheckSchema } from "@/lib/types";
-import type { ExcludedClaim, RiskClaim, SourceChunk, VerifiedRisk } from "@/lib/types";
+import type { ExcludedClaim, FactCheckOutput, RiskClaim, SourceChunk, VerifiedRisk } from "@/lib/types";
 
 const SYSTEM = `당신은 "Fact-Checker Agent"입니다. Financial & Risk Agent가 제시한 주장(claim)이
 실제 원문 청크로 뒷받침되는지 대조 검증하세요.
@@ -16,6 +16,18 @@ const SYSTEM = `당신은 "Fact-Checker Agent"입니다. Financial & Risk Agent�
 export interface FactCheckedResult {
   verified: VerifiedRisk[];
   excluded: ExcludedClaim[];
+}
+
+/** MOCK_LLM=true fallback: the risks here were already derived deterministically
+ *  from real ratio thresholds, so mark them supported rather than fake a rejection. */
+function buildMockVerdicts(risks: RiskClaim[]): FactCheckOutput {
+  return {
+    verdicts: risks.map((risk) => ({
+      claimId: risk.id,
+      verdict: "supported",
+      note: "목업 모드: 재무비율 임계값에서 결정론적으로 도출된 리스크라 자동 승인됩니다.",
+    })),
+  };
 }
 
 /**
@@ -64,6 +76,7 @@ export async function runFactChecker(
     prompt: `다음 주장들을 각각 검증하고 모든 claim에 대한 verdicts를 submit_result로 제출하세요.\n\n${claimsBlock}`,
     schema: FactCheckSchema,
     maxTokens: 3000,
+    mock: () => buildMockVerdicts(checkable),
   });
 
   const verdictByClaimId = new Map(result.verdicts.map((v) => [v.claimId, v]));

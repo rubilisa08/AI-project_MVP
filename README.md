@@ -35,6 +35,13 @@ npm run dev
 `http://localhost:3000` 접속 후 PDF/Excel 파일이나 뉴스 URL을 업로드하고 "브리핑 생성하기"를
 누르면 4단계 파이프라인 진행 상황이 실시간으로 표시됩니다(NDJSON 스트리밍).
 
+### API 키 없이 먼저 확인하기 (Mock 모드)
+
+`.env.local`에 `MOCK_LLM=true`를 설정하면 Claude API를 호출하지 않고, 각 에이전트가
+재무비율 임계값 기반의 목업 응답을 반환합니다. 파이프라인 구조·스트리밍 진행률·리포트 UI를
+비용 없이 먼저 확인하고 싶을 때 사용하세요 (`ANTHROPIC_API_KEY`는 비워둬도 됩니다).
+실제 Claude 분석 품질을 확인하려면 `MOCK_LLM=false`로 바꾸고 키를 넣으세요.
+
 ### 샘플 데이터로 테스트
 
 `sample_data/financial_sample.xlsx`에 유동비율이 낮고(88.9%) 부채비율이 높은(233%) 샘플 재무제표가

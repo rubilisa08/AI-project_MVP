@@ -1,7 +1,16 @@
 import { callClaudeJSON } from "@/lib/claude";
 import { computeFinancialRatios } from "@/lib/finance/ratios";
 import { RiskDraftSchema } from "@/lib/types";
-import type { FinancialLineItem, FinancialRatios, RiskClaim, SourceChunk } from "@/lib/types";
+import type {
+  FinancialLineItem,
+  FinancialRatios,
+  RiskCategory,
+  RiskClaim,
+  RiskDraft,
+  RiskDraftItem,
+  RiskSeverity,
+  SourceChunk,
+} from "@/lib/types";
 import { formatChunksForPrompt, formatRatiosForPrompt } from "./promptUtils";
 
 const SYSTEM = `당신은 B2B 기업 분석 플랫폼의 "Financial & Risk Agent"입니다.
@@ -20,6 +29,71 @@ export interface FinancialRiskResult {
   risks: RiskClaim[];
 }
 
+/** MOCK_LLM=true fallback: derives plausible risks from the ratio thresholds so the
+ *  pipeline can be exercised end-to-end without spending on the real API. */
+function buildMockRiskDraft(ratios: FinancialRatios, chunks: SourceChunk[]): RiskDraft {
+  const fallbackChunkId = chunks[0]?.id;
+  const basisFor = (labelPrefix: string): string | undefined =>
+    ratios.basis.find((b) => b.label.startsWith(labelPrefix))?.sourceChunkId;
+
+  const risks: RiskDraftItem[] = [];
+  const add = (item: {
+    category: RiskCategory;
+    title: string;
+    description: string;
+    severity: RiskSeverity;
+    sourceChunkIds: (string | undefined)[];
+    metricRefs?: string[];
+  }) => {
+    const ids = item.sourceChunkIds.filter((id): id is string => Boolean(id));
+    if (ids.length === 0 && fallbackChunkId) ids.push(fallbackChunkId);
+    if (ids.length === 0) return;
+    risks.push({ ...item, sourceChunkIds: ids });
+  };
+
+  if (ratios.currentRatio !== undefined && ratios.currentRatio < 100) {
+    add({
+      category: "financial",
+      title: "단기 유동성 부족",
+      description: `유동비율이 ${ratios.currentRatio}%로 100%를 밑돌아, 1년 내 갚아야 할 부채가 단기간에 현금화 가능한 자산보다 많습니다.`,
+      severity: ratios.currentRatio < 80 ? "high" : "medium",
+      sourceChunkIds: [basisFor("유동자산"), basisFor("유동부채")],
+      metricRefs: ["유동비율"],
+    });
+  }
+  if (ratios.debtRatio !== undefined && ratios.debtRatio > 150) {
+    add({
+      category: "financial",
+      title: "높은 부채비율",
+      description: `부채비율이 ${ratios.debtRatio}%로 자기자본 대비 부채 부담이 큽니다.`,
+      severity: ratios.debtRatio > 200 ? "high" : "medium",
+      sourceChunkIds: [basisFor("부채총계"), basisFor("자본총계")],
+      metricRefs: ["부채비율"],
+    });
+  }
+  if (ratios.operatingMargin !== undefined && ratios.operatingMargin < 5) {
+    add({
+      category: "operational",
+      title: "낮은 영업이익률",
+      description: `영업이익률이 ${ratios.operatingMargin}%로 낮아 본업 수익성 개선이 필요합니다.`,
+      severity: "medium",
+      sourceChunkIds: [basisFor("영업이익"), basisFor("매출액")],
+      metricRefs: ["영업이익률"],
+    });
+  }
+  if (risks.length === 0 && fallbackChunkId) {
+    risks.push({
+      category: "operational",
+      title: "제공된 자료 범위가 제한적",
+      description: "업로드된 자료만으로는 뚜렷한 리스크 신호가 발견되지 않았습니다.",
+      severity: "low",
+      sourceChunkIds: [fallbackChunkId],
+    });
+  }
+
+  return { risks: risks.slice(0, 8) };
+}
+
 export async function runFinancialRiskAgent(
   chunks: SourceChunk[],
   lineItems: FinancialLineItem[],
@@ -35,6 +109,7 @@ export async function runFinancialRiskAgent(
     prompt,
     schema: RiskDraftSchema,
     maxTokens: 3000,
+    mock: () => buildMockRiskDraft(ratios, chunks),
   });
 
   const risks: RiskClaim[] = draft.risks.map((risk, idx) => ({
