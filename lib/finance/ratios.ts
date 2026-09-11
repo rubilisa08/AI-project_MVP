@@ -1,0 +1,91 @@
+import type { FinancialLineItem, FinancialRatios, RatioBasisEntry } from "@/lib/types";
+
+/** Canonical financial statement line items this MVP knows how to compute ratios from. */
+export const KNOWN_LINE_ITEMS: { key: string; aliases: string[] }[] = [
+  { key: "revenue", aliases: ["매출액", "매출", "수익", "revenue", "sales"] },
+  { key: "operatingIncome", aliases: ["영업이익", "operating income", "operating profit"] },
+  { key: "netIncome", aliases: ["당기순이익", "순이익", "net income"] },
+  { key: "totalAssets", aliases: ["자산총계", "총자산", "total assets"] },
+  { key: "totalLiabilities", aliases: ["부채총계", "총부채", "total liabilities"] },
+  { key: "totalEquity", aliases: ["자본총계", "총자본", "total equity", "shareholders equity"] },
+  { key: "currentAssets", aliases: ["유동자산", "current assets"] },
+  { key: "currentLiabilities", aliases: ["유동부채", "current liabilities"] },
+];
+
+export function normalizeLineItemKey(rawLabel: string): string | null {
+  const normalized = rawLabel.trim().toLowerCase().replace(/\s+/g, "");
+  for (const item of KNOWN_LINE_ITEMS) {
+    if (item.aliases.some((alias) => normalized === alias.toLowerCase().replace(/\s+/g, ""))) {
+      return item.key;
+    }
+  }
+  return null;
+}
+
+function latestTwoPeriods(items: FinancialLineItem[], key: string): FinancialLineItem[] {
+  return items
+    .filter((item) => item.key === key)
+    .sort((a, b) => b.period.localeCompare(a.period));
+}
+
+function pick(items: FinancialLineItem[], key: string): FinancialLineItem | undefined {
+  return latestTwoPeriods(items, key)[0];
+}
+
+export function computeFinancialRatios(items: FinancialLineItem[]): FinancialRatios {
+  const basis: RatioBasisEntry[] = [];
+  const takeValue = (item: FinancialLineItem | undefined): number | undefined => {
+    if (!item) return undefined;
+    basis.push({ label: `${item.label} (${item.period})`, sourceChunkId: item.sourceChunkId });
+    return item.value;
+  };
+
+  const revenue = pick(items, "revenue");
+  const operatingIncome = pick(items, "operatingIncome");
+  const netIncome = pick(items, "netIncome");
+  const totalAssets = pick(items, "totalAssets");
+  const totalLiabilities = pick(items, "totalLiabilities");
+  const totalEquity = pick(items, "totalEquity");
+  const currentAssets = pick(items, "currentAssets");
+  const currentLiabilities = pick(items, "currentLiabilities");
+
+  const result: FinancialRatios = { basis, period: revenue?.period ?? operatingIncome?.period };
+
+  const revenueVal = takeValue(revenue);
+  const operatingIncomeVal = takeValue(operatingIncome);
+  const netIncomeVal = takeValue(netIncome);
+  const totalAssetsVal = takeValue(totalAssets);
+  const totalLiabilitiesVal = takeValue(totalLiabilities);
+  const totalEquityVal = takeValue(totalEquity);
+  const currentAssetsVal = takeValue(currentAssets);
+  const currentLiabilitiesVal = takeValue(currentLiabilities);
+
+  if (totalLiabilitiesVal !== undefined && totalEquityVal) {
+    result.debtRatio = round2((totalLiabilitiesVal / totalEquityVal) * 100);
+  }
+  if (currentAssetsVal !== undefined && currentLiabilitiesVal) {
+    result.currentRatio = round2((currentAssetsVal / currentLiabilitiesVal) * 100);
+  }
+  if (operatingIncomeVal !== undefined && revenueVal) {
+    result.operatingMargin = round2((operatingIncomeVal / revenueVal) * 100);
+  }
+  if (netIncomeVal !== undefined && totalEquityVal) {
+    result.roe = round2((netIncomeVal / totalEquityVal) * 100);
+  }
+  if (netIncomeVal !== undefined && totalAssetsVal) {
+    result.roa = round2((netIncomeVal / totalAssetsVal) * 100);
+  }
+
+  const revenueSeries = latestTwoPeriods(items, "revenue");
+  if (revenueSeries.length >= 2 && revenueSeries[1].value !== 0) {
+    const [latest, prev] = revenueSeries;
+    result.revenueGrowth = round2(((latest.value - prev.value) / prev.value) * 100);
+    basis.push({ label: `${latest.label} (${prev.period})`, sourceChunkId: prev.sourceChunkId });
+  }
+
+  return result;
+}
+
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
+}
