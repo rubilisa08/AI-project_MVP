@@ -31,6 +31,13 @@ export interface RatioBasisEntry {
   sourceChunkId: string;
 }
 
+export interface DataQuality {
+  /** 자산총계 = 부채총계 + 자본총계 항등식 검증. 세 값이 모두 없으면 undefined. */
+  balanceSheetCheck?: { balanced: boolean; diffAmount: number };
+  /** 전기 대비 비정상적으로 급변한 항목에 대한 사람이 읽을 수 있는 경고 메시지. */
+  anomalies: string[];
+}
+
 export interface RatioVerification {
   /** True when the Python (pandas) recomputation matched the TypeScript values within tolerance. */
   matched: boolean;
@@ -54,6 +61,7 @@ export interface FinancialRatios {
   basis: RatioBasisEntry[];
   /** Present when the ratios were cross-checked against an independent Python execution. */
   verification?: RatioVerification;
+  dataQuality?: DataQuality;
 }
 
 export const RISK_CATEGORIES = ["financial", "market", "operational"] as const;

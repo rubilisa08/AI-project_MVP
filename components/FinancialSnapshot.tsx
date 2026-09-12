@@ -57,8 +57,27 @@ export function FinancialSnapshot({ ratios }: { ratios: FinancialRatios }) {
     );
   }
 
+  const dataQuality = ratios.dataQuality;
+  const balanceSheetIssue = dataQuality?.balanceSheetCheck && !dataQuality.balanceSheetCheck.balanced;
+  const hasAnomalies = (dataQuality?.anomalies.length ?? 0) > 0;
+
   return (
     <div className="flex flex-col gap-4">
+      {(balanceSheetIssue || hasAnomalies) && (
+        <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
+          {balanceSheetIssue && dataQuality?.balanceSheetCheck && (
+            <p className="font-medium">
+              ⚠ 재무제표 정합성 오류: 자산총계가 부채총계+자본총계와{" "}
+              {Math.abs(dataQuality.balanceSheetCheck.diffAmount).toLocaleString("ko-KR")}만큼 불일치합니다.
+            </p>
+          )}
+          {hasAnomalies && (
+            <ul className="mt-1 list-disc pl-4">
+              {dataQuality?.anomalies.map((message) => <li key={message}>{message}</li>)}
+            </ul>
+          )}
+        </div>
+      )}
       {ratios.period && (
         <p className="text-xs font-medium text-zinc-400">기준 기간: {ratios.period}</p>
       )}

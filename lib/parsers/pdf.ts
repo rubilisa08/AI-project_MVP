@@ -2,6 +2,15 @@ import { PDFParse } from "pdf-parse";
 import type { ParsedSource, SourceChunk } from "@/lib/types";
 import { splitIntoChunks } from "./chunk";
 
+// pdfjs-dist normally locates its worker script relative to its own bundled
+// file path, which breaks under Next.js/Turbopack ("Cannot find module
+// .../pdf.worker.mjs"). Pointing it at the bare package specifier instead
+// lets Node's own module resolution find the real file in node_modules,
+// bypassing Turbopack's chunk-relative path entirely. (pdf-parse also ships a
+// "pdf-parse/worker" helper for this, but it pulls in @napi-rs/canvas native
+// bindings that aren't installed here — not worth it just for the worker src.)
+PDFParse.setWorker("pdfjs-dist/legacy/build/pdf.worker.mjs");
+
 export async function parsePdf(sourceId: string, label: string, buffer: Buffer): Promise<ParsedSource> {
   const parser = new PDFParse({ data: buffer });
   try {

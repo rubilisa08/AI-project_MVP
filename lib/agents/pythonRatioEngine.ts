@@ -1,7 +1,7 @@
 import { z } from "zod";
 import Anthropic from "@anthropic-ai/sdk";
 import { isMockMode } from "@/lib/claude";
-import { computeFinancialRatios } from "@/lib/finance/ratios";
+import { computeDataQuality, computeFinancialRatios } from "@/lib/finance/ratios";
 import type { FinancialLineItem, FinancialRatios, RatioVerification } from "@/lib/types";
 
 const MODEL = process.env.CLAUDE_MODEL || "claude-sonnet-5";
@@ -31,6 +31,10 @@ const PythonRatioSchema = z.object({
   quickRatio: z.number().nullable().optional(),
   interestCoverageRatio: z.number().nullable().optional(),
   revenueGrowth: z.number().nullable().optional(),
+  balanceSheetCheck: z
+    .object({ balanced: z.boolean(), diffAmount: z.number() })
+    .nullable()
+    .optional(),
 });
 
 type PythonRatioOutput = z.infer<typeof PythonRatioSchema>;
@@ -38,6 +42,7 @@ type PythonRatioOutput = z.infer<typeof PythonRatioSchema>;
 export interface PythonRatioResult {
   ratios: Partial<Record<(typeof RATIO_KEYS)[number], number>>;
   period?: string;
+  balanceSheetCheck?: { balanced: boolean; diffAmount: number };
   pythonCode: string;
   pythonStdout: string;
 }
@@ -56,10 +61,15 @@ const SYSTEM = `당신은 "Financial & Risk Agent"의 계산 담당입니다.
 - interestCoverageRatio = operatingIncome / interestExpense
 - revenueGrowth = (최신 period의 revenue - 그 다음 최신 period의 revenue) / 그 다음 최신 period의 revenue * 100 (revenue가 2개 period 미만이면 null)
 
+또한 회계 항등식도 검증하세요: 최신 period의 totalAssets, totalLiabilities, totalEquity가 모두 있으면
+diffAmount = totalAssets - (totalLiabilities + totalEquity)를 계산하고, |diffAmount|가
+max(1, |totalAssets| * 0.01) 이하이면 balanced=true, 아니면 false로 balanceSheetCheck에 담으세요.
+셋 중 하나라도 없으면 balanceSheetCheck는 null입니다.
+
 각 key에 여러 period가 있으면 문자열 내림차순으로 가장 큰(최신) period 값을 사용하세요. 모든 숫자는 소수점 둘째 자리로 반올림하세요.
 
 계산이 끝나면 마지막 bash 명령에서 다음 형식의 JSON 객체 하나만 표준출력(stdout)에 출력하세요. 다른 설명, 마크다운, 텍스트는 stdout에 절대 포함하지 마세요:
-{"period": "...", "debtRatio": ..., "currentRatio": ..., "operatingMargin": ..., "roe": ..., "roa": ..., "grossMargin": ..., "quickRatio": ..., "interestCoverageRatio": ..., "revenueGrowth": ...}`;
+{"period": "...", "debtRatio": ..., "currentRatio": ..., "operatingMargin": ..., "roe": ..., "roa": ..., "grossMargin": ..., "quickRatio": ..., "interestCoverageRatio": ..., "revenueGrowth": ..., "balanceSheetCheck": {"balanced": ..., "diffAmount": ...} | null}`;
 
 interface ServerToolUseBlock {
   type: "server_tool_use";
@@ -183,6 +193,7 @@ export async function computeRatiosViaPython(items: FinancialLineItem[]): Promis
     return {
       ratios: toRatiosPartial(parsed.data),
       period: parsed.data.period ?? undefined,
+      balanceSheetCheck: parsed.data.balanceSheetCheck ?? undefined,
       pythonCode: extractPythonCode(content),
       pythonStdout: stdout,
     };
@@ -194,6 +205,7 @@ export async function computeRatiosViaPython(items: FinancialLineItem[]): Promis
 /** MOCK_LLM=true fallback: fabricates a plausible pandas script + stdout matching the TS-computed ratios, so the pipeline demonstrates the verification UI without spending on the real API. */
 function buildMockPythonResult(items: FinancialLineItem[]): PythonRatioResult {
   const ts = computeFinancialRatios(items);
+  const balanceSheetCheck = computeDataQuality(items).balanceSheetCheck;
   const ratios: PythonRatioResult["ratios"] = {};
   for (const key of RATIO_KEYS) {
     const value = ts[key as keyof FinancialRatios];
@@ -219,7 +231,7 @@ result = {
 }
 print(json.dumps(result))`;
 
-  return { ratios, period: ts.period, pythonCode, pythonStdout: stdout };
+  return { ratios, period: ts.period, balanceSheetCheck, pythonCode, pythonStdout: stdout };
 }
 
 /** Merges the Python cross-check into TS-computed ratios: numeric fields are overridden by the

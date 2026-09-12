@@ -10,13 +10,19 @@
 단순히 LLM에게 "요약해줘"라고 던지지 않고, 역할을 분담해 서로를 검증하게 합니다.
 
 1. **Collector** — LLM 호출 없이 결정론적 파싱만 수행합니다. PDF/Excel/뉴스 URL을 문단·행 단위
-   "소스 청크"(`id`, 위치, 원문)로 정규화합니다. ([lib/agents/collector.ts](lib/agents/collector.ts))
+   "소스 청크"(`id`, 위치, 원문)로 정규화합니다. PDF는 텍스트 청크 추출과 별도로, Claude가
+   **Code Execution Tool + pdfplumber**로 PDF 안의 재무제표 표 자체를 찾아 페이지 번호까지 인용
+   근거로 남기며 라인아이템으로 추출합니다 — Excel 없이 PDF만 올려도 재무비율 계산이 가능합니다
+   (`ANTHROPIC_API_KEY` 필요, 실패 시 조용히 텍스트 청크만 사용).
+   ([lib/agents/collector.ts](lib/agents/collector.ts), [lib/agents/pdfTableExtractor.ts](lib/agents/pdfTableExtractor.ts))
 2. **Financial & Risk Agent** — 재무비율(부채비율·유동비율·당좌비율·영업이익률·매출총이익률·ROE·
    ROA·이자보상배율·매출성장률) 9종을 **두 개의 독립된 결정론적 엔진**으로 각각 계산해 교차검증합니다:
    (1) TypeScript 계산 유틸, (2) Claude의 **Code Execution Tool**로 실제 pandas 코드를 작성·실행시킨
    결과. LLM은 어느 계산에도 암산으로 관여하지 않으며, 두 값이 일치할 때만 화면에 검증 배지가 뜨고
-   실행된 코드와 stdout을 그대로 펼쳐볼 수 있습니다. 계산된 수치 + 관련 소스 청크를 Claude에 전달해
-   리스크 요인을 구조화된 JSON으로 추출합니다.
+   실행된 코드와 stdout을 그대로 펼쳐볼 수 있습니다. 같은 계산 안에서 **회계 항등식(자산총계 = 부채
+   총계 + 자본총계)**도 함께 검증하고, 전기 대비 ±300%를 넘는 이상 변동은 별도로 경고합니다 — 숫자가
+   맞는지뿐 아니라 원본 데이터 자체가 말이 되는지까지 확인합니다. 계산된 수치 + 관련 소스 청크를
+   Claude에 전달해 리스크 요인을 구조화된 JSON으로 추출합니다.
    ([lib/finance/ratios.ts](lib/finance/ratios.ts), [lib/agents/pythonRatioEngine.ts](lib/agents/pythonRatioEngine.ts), [lib/agents/financialRisk.ts](lib/agents/financialRisk.ts))
 3. **Fact-Checker Agent** — 2단계로 검증합니다. (1) 인용된 소스 청크 id가 실제로 존재하는지
    결정론적으로 확인하고, (2) Claude에게 "주장 vs 원문 청크"를 대조시켜 supported/
@@ -59,6 +65,14 @@ service_role 키는 이 앱에서 쓰지 않습니다.
 들어 있습니다. 이 파일만 업로드해도 재무비율 계산 → 리스크 도출 → 팩트체크 → 퍼블리시 전체
 파이프라인을 확인할 수 있습니다. (재생성: `node scripts/generate-sample-excel.mjs`)
 
+`sample_data/financial_sample.pdf`는 같은 숫자를 표 형태로 담은 PDF본으로, PDF 재무제표 표 추출
+기능(`lib/agents/pdfTableExtractor.ts`)을 테스트하기 위한 것입니다. **이 기능은 `MOCK_LLM=false` +
+실제 `ANTHROPIC_API_KEY`가 있어야만 동작합니다** — Files API 업로드와 Code Execution을 실제로
+호출하기 때문에 오프라인 목업으로는 의미가 없습니다. MOCK_LLM=true에서 PDF만 올리면 텍스트 청크는
+생기지만 재무비율은 계산되지 않습니다(Excel과 동시 업로드하거나 실제 키로 테스트하세요).
+(재생성: `pip install reportlab && python scripts/generate_sample_financial_pdf.py`, Windows의
+맑은 고딕 폰트를 사용합니다 — 다른 OS는 스크립트 상단의 폰트 경로를 수정하세요.)
+
 ## 프로젝트 구조
 
 ```
@@ -71,8 +85,9 @@ proxy.ts                  매 요청마다 Supabase 세션 쿠키 갱신 (Next 1
 lib/types.ts               공유 타입 + zod 스키마
 lib/claude.ts               Anthropic 구조화 출력 헬퍼 (tool use + zod 검증 + 재시도)
 lib/parsers/                pdf.ts / excel.ts / news.ts / chunk.ts / url-guard.ts(SSRF 가드)
-lib/finance/ratios.ts       결정론적 재무비율 계산(TypeScript)
+lib/finance/ratios.ts       결정론적 재무비율 계산(TypeScript) + 회계 정합성/이상치 검증
 lib/agents/pythonRatioEngine.ts  Code Execution Tool로 pandas 재무비율 이중 계산
+lib/agents/pdfTableExtractor.ts  Code Execution Tool + pdfplumber로 PDF 표에서 라인아이템 추출
 lib/roi.ts                  ROI(처리 시간 절감) 계산 헬퍼
 lib/agents/                 collector / financialRisk / factChecker / publisher
 lib/supabase/               client.ts(브라우저) / server.ts(서버 컴포넌트·라우트)
@@ -101,3 +116,8 @@ supabase/schema.sql         reports 테이블 + RLS 정책 (SQL Editor에서 1�
 - **리포트 공유 없음**: 저장된 리포트는 본인만 볼 수 있고, 팀 공유/코멘트 기능은 아직 없습니다.
 - **Code Execution Tool 비용**: 월 1,550시간 무료 제공 후 시간당 $0.05가 과금됩니다. MOCK_LLM=true
   에서는 실제 API를 호출하지 않고 동일한 UI를 무료로 확인할 수 있습니다.
+- **PDF 업로드마다 추가 API 호출**: PDF를 올릴 때마다 재무제표 표가 있는지 확인하기 위해 Files API
+  업로드 + Code Execution 호출이 1회 발생합니다(재무제표가 아닌 PDF여도 마찬가지). 지연시간과
+  비용이 조금 늘어나는 대신 Excel 없이도 PDF만으로 재무비율을 계산할 수 있습니다.
+- **DART 자동 연동 없음**: 기업명을 입력하면 DART 사업보고서를 자동으로 가져오는 기능은 아직
+  없습니다 — 사용자가 PDF/Excel 파일을 직접 업로드해야 합니다.

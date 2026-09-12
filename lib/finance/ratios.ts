@@ -1,4 +1,4 @@
-import type { FinancialLineItem, FinancialRatios, RatioBasisEntry } from "@/lib/types";
+import type { DataQuality, FinancialLineItem, FinancialRatios, RatioBasisEntry } from "@/lib/types";
 
 /** Canonical financial statement line items this MVP knows how to compute ratios from. */
 export const KNOWN_LINE_ITEMS: { key: string; aliases: string[] }[] = [
@@ -106,4 +106,41 @@ export function computeFinancialRatios(items: FinancialLineItem[]): FinancialRat
 
 function round2(n: number): number {
   return Math.round(n * 100) / 100;
+}
+
+const ANOMALY_THRESHOLD_PERCENT = 300;
+
+/**
+ * Deterministic data-quality checks the LLM never touches: does the balance
+ * sheet actually balance (자산총계 = 부채총계 + 자본총계), and did any line
+ * item swing implausibly period-over-period. Catches source-data/extraction
+ * errors that a purely-correct ratio formula would otherwise mask.
+ */
+export function computeDataQuality(items: FinancialLineItem[]): DataQuality {
+  const totalAssets = pick(items, "totalAssets");
+  const totalLiabilities = pick(items, "totalLiabilities");
+  const totalEquity = pick(items, "totalEquity");
+
+  const dataQuality: DataQuality = { anomalies: [] };
+
+  if (totalAssets && totalLiabilities && totalEquity) {
+    const diffAmount = round2(totalAssets.value - (totalLiabilities.value + totalEquity.value));
+    const tolerance = Math.max(1, Math.abs(totalAssets.value) * 0.01);
+    dataQuality.balanceSheetCheck = { balanced: Math.abs(diffAmount) <= tolerance, diffAmount };
+  }
+
+  const keys = new Set(items.map((item) => item.key));
+  for (const key of keys) {
+    const series = latestTwoPeriods(items, key);
+    if (series.length < 2 || series[1].value === 0) continue;
+    const [latest, prev] = series;
+    const changePercent = round2(((latest.value - prev.value) / Math.abs(prev.value)) * 100);
+    if (Math.abs(changePercent) > ANOMALY_THRESHOLD_PERCENT) {
+      dataQuality.anomalies.push(
+        `${latest.label}이(가) 전기 대비 ${changePercent}% 변동했습니다 (이상치 의심)`,
+      );
+    }
+  }
+
+  return dataQuality;
 }

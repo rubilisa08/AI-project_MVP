@@ -1,5 +1,5 @@
 import { callClaudeJSON } from "@/lib/claude";
-import { computeFinancialRatios } from "@/lib/finance/ratios";
+import { computeDataQuality, computeFinancialRatios } from "@/lib/finance/ratios";
 import { computeRatiosViaPython, mergeRatioVerification } from "@/lib/agents/pythonRatioEngine";
 import { RiskDraftSchema } from "@/lib/types";
 import type {
@@ -102,6 +102,12 @@ export async function runFinancialRiskAgent(
   const tsRatios = computeFinancialRatios(lineItems);
   const pythonResult = await computeRatiosViaPython(lineItems);
   const ratios = mergeRatioVerification(tsRatios, pythonResult);
+
+  const tsDataQuality = computeDataQuality(lineItems);
+  ratios.dataQuality = {
+    anomalies: tsDataQuality.anomalies,
+    balanceSheetCheck: pythonResult?.balanceSheetCheck ?? tsDataQuality.balanceSheetCheck,
+  };
 
   const prompt = `# 계산된 재무비율\n${formatRatiosForPrompt(ratios)}\n\n# 소스 청크\n${formatChunksForPrompt(
     chunks,

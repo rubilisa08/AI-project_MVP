@@ -94,6 +94,10 @@ LLM을 호출하지 않는 결정론적 파싱 단계이며, 모든 출력은 �
   - `totalEquity`: 자본총계, 총자본, total equity, shareholders equity
   - `currentAssets`: 유동자산, current assets
   - `currentLiabilities`: 유동부채, current liabilities
+  - `costOfGoodsSold`: 매출원가, cost of goods sold, cogs
+  - `inventory`: 재고자산, inventory
+  - `interestExpense`: 이자비용, interest expense
+- **PDF 재무제표 표 추출**: Excel과 별개로, PDF는 Claude가 **Code Execution Tool + pdfplumber**(샌드박스에 사전 설치됨)로 원본 PDF를 직접 열어 재무상태표/손익계산서 표를 찾는다(`lib/agents/pdfTableExtractor.ts`). 위와 동일한 키 목록만 추출 대상이며, 각 값이 몇 페이지에서 나왔는지 함께 받아 그 페이지를 가리키는 새 소스 청크(`위치: "N페이지 (표)"`)를 만들어 인용 근거로 연결한다. 표를 못 찾으면 빈 배열을 반환하고 기존 텍스트 청크만 사용(안전한 폴백). **MOCK_LLM이나 API 키 미설정 시에는 이 경로 자체가 비활성화**된다 — 오프라인 목업으로 대체할 수 있는 성질의 기능이 아니기 때문.
 
 ### 5.3 Financial & Risk Agent 상세 명세
 
@@ -112,6 +116,11 @@ LLM을 호출하지 않는 결정론적 파싱 단계이며, 모든 출력은 �
 | 매출성장률 | (최신 매출 − 직전 매출) ÷ 직전 매출 × 100 (최소 2개 기간 데이터 필요) |
 
 **이중 계산 검증(환각 방지 핵심 장치)**: 위 9개 지표는 (1) TypeScript로 한 번, (2) Claude의 **Code Execution Tool**(`code_execution_20250825`)로 실제 pandas 코드를 작성·실행시켜 다시 한 번, 총 두 개의 독립된 결정론적 엔진으로 계산한다(`lib/finance/ratios.ts`, `lib/agents/pythonRatioEngine.ts`). LLM은 어느 쪽 계산에도 암산으로 관여하지 않는다 — TypeScript는 순수 함수, Python 쪽은 Claude가 코드를 작성하지만 최종 숫자는 실행된 코드의 stdout(JSON)을 그대로 파싱한 값이다. 두 결과가 오차범위(0.05) 내로 일치할 때만 화면에 "✓ TypeScript ↔ Python(pandas) 이중 계산 검증 완료" 배지가 표시되며, 실행된 실제 코드와 stdout을 그대로 펼쳐볼 수 있다. Python 호출이 실패(네트워크 오류, 파싱 실패 등)하면 조용히 TypeScript 값으로 폴백하고 검증 배지 없이 표시한다.
+
+**데이터 품질 검증(회계 정합성 + 이상치 탐지)**: 계산이 아무리 정확해도 원본 데이터 자체가 틀렸으면 소용없다는 전제로, 같은 Python 계산 호출 안에서 다음을 추가로 검증한다(`computeDataQuality`, `lib/finance/ratios.ts`):
+- **회계 항등식**: 최신 기간의 자산총계 = 부채총계 + 자본총계가 성립하는지, 오차가 자산총계의 1%(최소 1원) 이내인지 확인. 벗어나면 리포트에 "⚠ 재무제표 정합성 오류" 배너로 즉시 노출.
+- **이상치 탐지**: 같은 항목이 2개 기간 있으면 전기 대비 변동률을 계산해 ±300%를 넘으면 "이상치 의심" 경고 문구를 생성.
+문제가 없으면 화면에 아무것도 표시하지 않아 노이즈를 만들지 않는다.
 
 **리스크 식별 규칙**:
 - 입력: 위에서 계산된 재무비율 + 원문 소스 청크만 (외부 지식/추측 금지, 시스템 프롬프트로 강제)
@@ -192,6 +201,8 @@ LLM을 호출하지 않는 결정론적 파싱 단계이며, 모든 출력은 �
 | 리스크가 존재하지 않는 청크 id를 인용(모델 환각) | 결정론적으로 자동 제외, LLM 호출 생략 |
 | Fact-Checker가 `unsupported` 판정 | 최종본에서 자동 제외, `excludedClaims`에 사유 기록하여 투명하게 노출 |
 | Claude 응답이 스키마 검증 실패 | 검증 오류 메시지를 포함해 1회 재시도, 재시도도 실패하면 파이프라인 에러로 종료 |
+| PDF 표 추출 실패(API 키 없음/타임아웃/파싱 실패) | `null` 반환 후 조용히 폴백 — 기존 텍스트 청크만 사용, 파이프라인은 정상 진행 |
+| 재무제표 항등식 불일치(자산 ≠ 부채+자본) | 파이프라인은 계속 진행하되 리포트에 경고 배너로 노출(차단하지 않음, 투명성 우선) |
 
 ## 6. 기술 스택 (Technical Stack)
 
@@ -228,7 +239,7 @@ LLM을 호출하지 않는 결정론적 파싱 단계이며, 모든 출력은 �
 | Claude 3.5 Sonnet & Haiku (모델 티어링) | 단일 모델(`CLAUDE_MODEL` 환경변수, 기본값 `claude-sonnet-5`)만 사용 | 비용 절감용 Haiku 이원화 전략 미적용 |
 | Supabase (PostgreSQL, Vector DB) | Supabase Postgres만 사용 (reports 테이블 + RLS) | 벡터DB/임베딩 저장 없음 → Fact-Checker는 RAG 검색이 아니라 청크 id 직접 대조 방식 |
 | Shadcn UI | 순수 Tailwind CSS 커스텀 컴포넌트 | Shadcn 라이브러리 미사용 |
-| DART 사업보고서 자동 수집 / 기업명 입력 | 미구현 | 기업명 입력 → 자동 크롤링 없음. 사용자가 직접 파일/URL을 업로드하는 방식만 지원 |
+| DART 사업보고서 자동 수집 / 기업명 입력 | 부분 구현 | 기업명 입력 → 자동 크롤링은 여전히 없어 사용자가 DART 사업보고서 PDF를 직접 업로드해야 함. 다만 업로드된 PDF는 이제 텍스트 근거뿐 아니라 표 안의 실제 재무 수치까지 추출해 재무비율 계산에 기여함(7.3의 PDF 표 추출 참고) — PRD가 원래 상정한 "DART PDF 업로드" 시나리오의 절반(자동 수집 제외)은 채워짐 |
 
 ### 7.3 PRD에 없던 추가 구현 사항
 
@@ -239,3 +250,5 @@ LLM을 호출하지 않는 결정론적 파싱 단계이며, 모든 출력은 �
 - **TS ↔ Python 이중 계산 검증 배지** — 실행된 pandas 코드와 stdout을 그대로 펼쳐볼 수 있는 `RatioVerificationBadge`
 - **ROI 배너** — 파이프라인 처리 시간을 실측(`processingTimeMs`)해 "8시간 → N분" 형태로 절감 효과를 정량 표시(`lib/roi.ts`, `ROIBanner.tsx`)
 - **인쇄/PDF 대응 레이아웃** — 실무 배포를 고려한 `@media print` 스타일 및 "인쇄/PDF로 저장" 버튼
+- **회계 정합성(자산=부채+자본) 및 이상치 검증** — `computeDataQuality`가 재무제표 항등식 위반과 전기 대비 ±300% 이상 변동을 자동 탐지해 경고 배너로 노출
+- **PDF 재무제표 표 추출** — Code Execution Tool + pdfplumber로 PDF 안의 표에서 직접 재무 수치를 뽑아내 페이지 단위 인용 근거와 함께 라인아이템화(`lib/agents/pdfTableExtractor.ts`), Excel 없이 PDF만으로도 재무비율 분석이 가능해짐

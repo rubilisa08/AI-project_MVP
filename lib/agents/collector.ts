@@ -1,3 +1,4 @@
+import { extractPdfFinancialLineItems } from "@/lib/agents/pdfTableExtractor";
 import { parseExcel } from "@/lib/parsers/excel";
 import { parseNewsUrl } from "@/lib/parsers/news";
 import { parsePdf } from "@/lib/parsers/pdf";
@@ -34,7 +35,13 @@ export async function collect(files: UploadedFile[], urls: string[]): Promise<Co
     const ext = extensionOf(file.name);
 
     if (ext === "pdf") {
-      sources.push(await parsePdf(sourceId, file.name, file.buffer));
+      const source = await parsePdf(sourceId, file.name, file.buffer);
+      const extraction = await extractPdfFinancialLineItems(sourceId, file.name, file.buffer);
+      if (extraction) {
+        source.chunks.push(...extraction.extraChunks);
+        lineItems.push(...extraction.lineItems);
+      }
+      sources.push(source);
     } else if (ext === "xlsx" || ext === "xls" || ext === "csv") {
       const { source, lineItems: items } = parseExcel(sourceId, file.name, file.buffer);
       sources.push(source);
