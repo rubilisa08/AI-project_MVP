@@ -25,9 +25,22 @@ function parseUrls(raw: FormDataEntryValue | null): string[] {
 }
 
 export async function POST(request: Request) {
-  const formData = await request.formData();
-  const fileEntries = formData.getAll("files").filter((f): f is File => f instanceof File);
-  const urls = parseUrls(formData.get("urls"));
+  let formData: FormData;
+  let fileEntries: File[];
+  let urls: string[];
+
+  try {
+    formData = await request.formData();
+    fileEntries = formData.getAll("files").filter((f): f is File => f instanceof File);
+    urls = parseUrls(formData.get("urls"));
+  } catch (error) {
+    // Surfaces the real cause (e.g. a module that fails to load in this
+    // runtime) instead of a bare framework 500 with no body.
+    return Response.json(
+      { error: `요청을 읽는 중 오류가 발생했습니다: ${error instanceof Error ? error.message : String(error)}` },
+      { status: 500 },
+    );
+  }
 
   if (fileEntries.length === 0 && urls.length === 0) {
     return Response.json({ error: "파일 또는 URL을 1개 이상 입력하세요." }, { status: 400 });

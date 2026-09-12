@@ -1,7 +1,5 @@
-import { extractPdfFinancialLineItems } from "@/lib/agents/pdfTableExtractor";
 import { parseExcel } from "@/lib/parsers/excel";
 import { parseNewsUrl } from "@/lib/parsers/news";
-import { parsePdf } from "@/lib/parsers/pdf";
 import type { FinancialLineItem, ParsedSource } from "@/lib/types";
 
 export interface UploadedFile {
@@ -35,6 +33,14 @@ export async function collect(files: UploadedFile[], urls: string[]): Promise<Co
     const ext = extensionOf(file.name);
 
     if (ext === "pdf") {
+      // Loaded lazily: pdf-parse drags in pdfjs-dist, a large/fragile dependency
+      // with its own worker-resolution quirks (see lib/parsers/pdf.ts). Keeping
+      // it out of this module's top-level imports means an Excel-only request
+      // never pays for (or risks breaking on) loading it.
+      const [{ parsePdf }, { extractPdfFinancialLineItems }] = await Promise.all([
+        import("@/lib/parsers/pdf"),
+        import("@/lib/agents/pdfTableExtractor"),
+      ]);
       const source = await parsePdf(sourceId, file.name, file.buffer);
       const extraction = await extractPdfFinancialLineItems(sourceId, file.name, file.buffer);
       if (extraction) {
