@@ -110,7 +110,11 @@ export default function Home() {
       <section className="grid grid-cols-1 gap-6 rounded-2xl border border-zinc-200 p-6 dark:border-zinc-800 md:grid-cols-2">
         <div>
           <h2 className="mb-2 text-sm font-semibold text-zinc-700 dark:text-zinc-200">파일 업로드</h2>
-          <FileDropzone files={files} onChange={setFiles} />
+          <FileDropzone
+            files={files}
+            onChange={setFiles}
+            onUrlDrop={(url) => setUrls((prev) => [...prev, url])}
+          />
         </div>
         <div>
           <h2 className="mb-2 text-sm font-semibold text-zinc-700 dark:text-zinc-200">뉴스 URL</h2>

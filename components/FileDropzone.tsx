@@ -15,12 +15,29 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
 }
 
+/** Best-effort extraction of a dragged link's URL (e.g. a DART report link dragged in from another tab). */
+function extractDroppedUrl(dataTransfer: DataTransfer): string | null {
+  const raw =
+    dataTransfer.getData("text/uri-list") || dataTransfer.getData("text/plain") || dataTransfer.getData("URL");
+  const candidate = raw.split("\n").find((line) => line.trim() && !line.trim().startsWith("#"))?.trim();
+  if (!candidate) return null;
+  try {
+    const url = new URL(candidate);
+    return url.protocol === "http:" || url.protocol === "https:" ? candidate : null;
+  } catch {
+    return null;
+  }
+}
+
 export function FileDropzone({
   files,
   onChange,
+  onUrlDrop,
 }: {
   files: File[];
   onChange: (files: File[]) => void;
+  /** Called when a link (not a file) is dropped — e.g. dragging a DART report link in from another tab. */
+  onUrlDrop?: (url: string) => void;
 }) {
   const [isDragging, setIsDragging] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -46,7 +63,12 @@ export function FileDropzone({
         onDrop={(e) => {
           e.preventDefault();
           setIsDragging(false);
-          addFiles(e.dataTransfer.files);
+          if (e.dataTransfer.files.length > 0) {
+            addFiles(e.dataTransfer.files);
+            return;
+          }
+          const url = extractDroppedUrl(e.dataTransfer);
+          if (url) onUrlDrop?.(url);
         }}
         onClick={() => inputRef.current?.click()}
         role="button"
@@ -64,7 +86,8 @@ export function FileDropzone({
           PDF·Excel 파일을 드래그하거나 클릭해서 업로드
         </span>
         <span className="text-xs text-zinc-500 dark:text-zinc-400">
-          공시자료, 계약서, 재무제표 등 (.pdf, .xlsx, .xls, .csv / 최대 15MB)
+          공시자료, 계약서, 재무제표 등 (.pdf, .xlsx, .xls, .csv / 최대 15MB) · DART 등 다른 탭의 링크를
+          끌어다 놓아도 됩니다
         </span>
         <input
           ref={inputRef}

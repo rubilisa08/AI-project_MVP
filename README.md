@@ -13,8 +13,10 @@
    "소스 청크"(`id`, 위치, 원문)로 정규화합니다. PDF는 텍스트 청크 추출과 별도로, Claude가
    **Code Execution Tool + pdfplumber**로 PDF 안의 재무제표 표 자체를 찾아 페이지 번호까지 인용
    근거로 남기며 라인아이템으로 추출합니다 — Excel 없이 PDF만 올려도 재무비율 계산이 가능합니다
-   (`ANTHROPIC_API_KEY` 필요, 실패 시 조용히 텍스트 청크만 사용).
-   ([lib/agents/collector.ts](lib/agents/collector.ts), [lib/agents/pdfTableExtractor.ts](lib/agents/pdfTableExtractor.ts))
+   (`ANTHROPIC_API_KEY` 필요, 실패 시 조용히 텍스트 청크만 사용). PDF는 파일 업로드뿐 아니라
+   **다른 탭의 링크를 드롭존에 끌어다 놓아도** 됩니다 — 서버가 URL을 받아 응답의 Content-Type이
+   `application/pdf`면 업로드한 PDF와 동일하게 처리합니다(DART 사업보고서 링크 등).
+   ([lib/agents/collector.ts](lib/agents/collector.ts), [lib/agents/pdfTableExtractor.ts](lib/agents/pdfTableExtractor.ts), [lib/parsers/news.ts](lib/parsers/news.ts))
 2. **Financial & Risk Agent** — 재무비율(부채비율·유동비율·당좌비율·영업이익률·매출총이익률·ROE·
    ROA·이자보상배율·매출성장률) 9종을 **두 개의 독립된 결정론적 엔진**으로 각각 계산해 교차검증합니다:
    (1) TypeScript 계산 유틸, (2) Claude의 **Code Execution Tool**로 실제 pandas 코드를 작성·실행시킨

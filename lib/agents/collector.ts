@@ -60,7 +60,9 @@ export async function collect(files: UploadedFile[], urls: string[]): Promise<Co
   for (const url of urls) {
     counter += 1;
     const sourceId = `s${counter}`;
-    sources.push(await parseNewsUrl(sourceId, url));
+    const { source, lineItems: items } = await parseNewsUrl(sourceId, url);
+    sources.push(source);
+    lineItems.push(...items);
   }
 
   const totalChunks = sources.reduce((sum, s) => sum + s.chunks.length, 0);
