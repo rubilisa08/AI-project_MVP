@@ -111,5 +111,7 @@ export async function runPublisher(params: {
     sources,
     chunks,
     excludedClaims,
+    // Overwritten by the API route once the full pipeline duration is known.
+    processingTimeMs: 0,
   };
 }

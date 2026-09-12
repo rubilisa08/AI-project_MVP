@@ -11,10 +11,13 @@
 
 1. **Collector** — LLM 호출 없이 결정론적 파싱만 수행합니다. PDF/Excel/뉴스 URL을 문단·행 단위
    "소스 청크"(`id`, 위치, 원문)로 정규화합니다. ([lib/agents/collector.ts](lib/agents/collector.ts))
-2. **Financial & Risk Agent** — 재무비율(부채비율·유동비율·영업이익률·ROE·ROA·매출성장률)은
-   **TypeScript 계산 유틸이 직접 산출**합니다(LLM에 맡기지 않음).
-   계산된 수치 + 관련 소스 청크를 Claude에 전달해 리스크 요인을 구조화된 JSON으로 추출합니다.
-   ([lib/finance/ratios.ts](lib/finance/ratios.ts), [lib/agents/financialRisk.ts](lib/agents/financialRisk.ts))
+2. **Financial & Risk Agent** — 재무비율(부채비율·유동비율·당좌비율·영업이익률·매출총이익률·ROE·
+   ROA·이자보상배율·매출성장률) 9종을 **두 개의 독립된 결정론적 엔진**으로 각각 계산해 교차검증합니다:
+   (1) TypeScript 계산 유틸, (2) Claude의 **Code Execution Tool**로 실제 pandas 코드를 작성·실행시킨
+   결과. LLM은 어느 계산에도 암산으로 관여하지 않으며, 두 값이 일치할 때만 화면에 검증 배지가 뜨고
+   실행된 코드와 stdout을 그대로 펼쳐볼 수 있습니다. 계산된 수치 + 관련 소스 청크를 Claude에 전달해
+   리스크 요인을 구조화된 JSON으로 추출합니다.
+   ([lib/finance/ratios.ts](lib/finance/ratios.ts), [lib/agents/pythonRatioEngine.ts](lib/agents/pythonRatioEngine.ts), [lib/agents/financialRisk.ts](lib/agents/financialRisk.ts))
 3. **Fact-Checker Agent** — 2단계로 검증합니다. (1) 인용된 소스 청크 id가 실제로 존재하는지
    결정론적으로 확인하고, (2) Claude에게 "주장 vs 원문 청크"를 대조시켜 supported/
    partially_supported/unsupported를 판정받습니다. 근거 없는 주장은 최종본에서 제외됩니다.
@@ -68,10 +71,13 @@ proxy.ts                  매 요청마다 Supabase 세션 쿠키 갱신 (Next 1
 lib/types.ts               공유 타입 + zod 스키마
 lib/claude.ts               Anthropic 구조화 출력 헬퍼 (tool use + zod 검증 + 재시도)
 lib/parsers/                pdf.ts / excel.ts / news.ts / chunk.ts / url-guard.ts(SSRF 가드)
-lib/finance/ratios.ts       결정론적 재무비율 계산
+lib/finance/ratios.ts       결정론적 재무비율 계산(TypeScript)
+lib/agents/pythonRatioEngine.ts  Code Execution Tool로 pandas 재무비율 이중 계산
+lib/roi.ts                  ROI(처리 시간 절감) 계산 헬퍼
 lib/agents/                 collector / financialRisk / factChecker / publisher
 lib/supabase/               client.ts(브라우저) / server.ts(서버 컴포넌트·라우트)
-components/                 업로드 UI, 파이프라인 진행 표시, 리포트 뷰(용어 툴팁·출처 하이라이팅 포함)
+components/                 업로드 UI, 파이프라인 진행 표시, 리포트 뷰(재무 현황 스냅샷·이중 계산
+                             검증 배지·ROI 배너·용어 툴팁·출처 하이라이팅·인쇄 대응 포함)
 supabase/schema.sql         reports 테이블 + RLS 정책 (SQL Editor에서 1회 실행)
 ```
 
@@ -90,5 +96,8 @@ supabase/schema.sql         reports 테이블 + RLS 정책 (SQL Editor에서 1�
 - **원본 파일 미보관**: 생성된 리포트(JSON)는 저장되지만, 업로드한 PDF/Excel 원본은 Storage에
   저장하지 않습니다 — 파싱 후 버려집니다.
 - **재무 라벨 인식**: 엑셀에서 매출액/영업이익/당기순이익/자산총계/부채총계/자본총계/유동자산/
-  유동부채 등 한글·영문 표준 라벨만 인식합니다 (`lib/finance/ratios.ts`의 `KNOWN_LINE_ITEMS`).
+  유동부채/매출원가/재고자산/이자비용 등 한글·영문 표준 라벨만 인식합니다
+  (`lib/finance/ratios.ts`의 `KNOWN_LINE_ITEMS`).
 - **리포트 공유 없음**: 저장된 리포트는 본인만 볼 수 있고, 팀 공유/코멘트 기능은 아직 없습니다.
+- **Code Execution Tool 비용**: 월 1,550시간 무료 제공 후 시간당 $0.05가 과금됩니다. MOCK_LLM=true
+  에서는 실제 API를 호출하지 않고 동일한 UI를 무료로 확인할 수 있습니다.

@@ -10,6 +10,9 @@ export const KNOWN_LINE_ITEMS: { key: string; aliases: string[] }[] = [
   { key: "totalEquity", aliases: ["자본총계", "총자본", "total equity", "shareholders equity"] },
   { key: "currentAssets", aliases: ["유동자산", "current assets"] },
   { key: "currentLiabilities", aliases: ["유동부채", "current liabilities"] },
+  { key: "costOfGoodsSold", aliases: ["매출원가", "cost of goods sold", "cogs"] },
+  { key: "inventory", aliases: ["재고자산", "inventory"] },
+  { key: "interestExpense", aliases: ["이자비용", "interest expense"] },
 ];
 
 export function normalizeLineItemKey(rawLabel: string): string | null {
@@ -48,6 +51,9 @@ export function computeFinancialRatios(items: FinancialLineItem[]): FinancialRat
   const totalEquity = pick(items, "totalEquity");
   const currentAssets = pick(items, "currentAssets");
   const currentLiabilities = pick(items, "currentLiabilities");
+  const costOfGoodsSold = pick(items, "costOfGoodsSold");
+  const inventory = pick(items, "inventory");
+  const interestExpense = pick(items, "interestExpense");
 
   const result: FinancialRatios = { basis, period: revenue?.period ?? operatingIncome?.period };
 
@@ -59,6 +65,9 @@ export function computeFinancialRatios(items: FinancialLineItem[]): FinancialRat
   const totalEquityVal = takeValue(totalEquity);
   const currentAssetsVal = takeValue(currentAssets);
   const currentLiabilitiesVal = takeValue(currentLiabilities);
+  const costOfGoodsSoldVal = takeValue(costOfGoodsSold);
+  const inventoryVal = takeValue(inventory);
+  const interestExpenseVal = takeValue(interestExpense);
 
   if (totalLiabilitiesVal !== undefined && totalEquityVal) {
     result.debtRatio = round2((totalLiabilitiesVal / totalEquityVal) * 100);
@@ -74,6 +83,15 @@ export function computeFinancialRatios(items: FinancialLineItem[]): FinancialRat
   }
   if (netIncomeVal !== undefined && totalAssetsVal) {
     result.roa = round2((netIncomeVal / totalAssetsVal) * 100);
+  }
+  if (costOfGoodsSoldVal !== undefined && revenueVal) {
+    result.grossMargin = round2(((revenueVal - costOfGoodsSoldVal) / revenueVal) * 100);
+  }
+  if (currentAssetsVal !== undefined && inventoryVal !== undefined && currentLiabilitiesVal) {
+    result.quickRatio = round2(((currentAssetsVal - inventoryVal) / currentLiabilitiesVal) * 100);
+  }
+  if (operatingIncomeVal !== undefined && interestExpenseVal) {
+    result.interestCoverageRatio = round2(operatingIncomeVal / interestExpenseVal);
   }
 
   const revenueSeries = latestTwoPeriods(items, "revenue");

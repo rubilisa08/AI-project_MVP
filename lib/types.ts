@@ -31,6 +31,15 @@ export interface RatioBasisEntry {
   sourceChunkId: string;
 }
 
+export interface RatioVerification {
+  /** True when the Python (pandas) recomputation matched the TypeScript values within tolerance. */
+  matched: boolean;
+  /** The pandas code actually executed via Claude's Code Execution tool. */
+  pythonCode: string;
+  /** Raw stdout (JSON) captured from the executed code. */
+  pythonStdout: string;
+}
+
 export interface FinancialRatios {
   period?: string;
   debtRatio?: number;
@@ -39,7 +48,12 @@ export interface FinancialRatios {
   roe?: number;
   roa?: number;
   revenueGrowth?: number;
+  grossMargin?: number;
+  quickRatio?: number;
+  interestCoverageRatio?: number;
   basis: RatioBasisEntry[];
+  /** Present when the ratios were cross-checked against an independent Python execution. */
+  verification?: RatioVerification;
 }
 
 export const RISK_CATEGORIES = ["financial", "market", "operational"] as const;
@@ -137,6 +151,8 @@ export interface Report {
   sources: { id: string; label: string; type: SourceType }[];
   chunks: SourceChunk[];
   excludedClaims: ExcludedClaim[];
+  /** Wall-clock time (ms) the /api/analyze pipeline took end-to-end, for the ROI banner. */
+  processingTimeMs: number;
 }
 
 export type PipelineStage =

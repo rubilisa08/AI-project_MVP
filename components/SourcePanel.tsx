@@ -19,7 +19,7 @@ export function SourcePanel({
   }, [focusedChunkId]);
 
   return (
-    <div className="max-h-[420px] overflow-y-auto rounded-xl border border-zinc-200 dark:border-zinc-800">
+    <div className="max-h-[420px] overflow-y-auto rounded-xl border border-zinc-200 print:max-h-none print:overflow-visible dark:border-zinc-800">
       <ul className="divide-y divide-zinc-200 dark:divide-zinc-800">
         {chunks.map((chunk) => (
           <li

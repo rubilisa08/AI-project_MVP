@@ -26,6 +26,9 @@ export function formatRatiosForPrompt(ratios: FinancialRatios): string {
   if (ratios.roe !== undefined) parts.push(`ROE: ${ratios.roe}%`);
   if (ratios.roa !== undefined) parts.push(`ROA: ${ratios.roa}%`);
   if (ratios.revenueGrowth !== undefined) parts.push(`매출성장률: ${ratios.revenueGrowth}%`);
+  if (ratios.grossMargin !== undefined) parts.push(`매출총이익률: ${ratios.grossMargin}%`);
+  if (ratios.quickRatio !== undefined) parts.push(`당좌비율: ${ratios.quickRatio}%`);
+  if (ratios.interestCoverageRatio !== undefined) parts.push(`이자보상배율: ${ratios.interestCoverageRatio}배`);
 
   return parts.length > 0
     ? parts.join(", ")

@@ -97,16 +97,21 @@ LLM을 호출하지 않는 결정론적 파싱 단계이며, 모든 출력은 �
 
 ### 5.3 Financial & Risk Agent 상세 명세
 
-**재무비율 계산 공식** (전부 코드로 결정론적 계산, LLM 미개입 — 계산에 사용된 원본 청크 id를 함께 기록해 근거 추적 가능):
+**재무비율 계산 공식** (계산에 사용된 원본 청크 id를 함께 기록해 근거 추적 가능):
 
 | 지표 | 공식 |
 |---|---|
 | 부채비율 | 부채총계 ÷ 자본총계 × 100 |
 | 유동비율 | 유동자산 ÷ 유동부채 × 100 |
+| 당좌비율 | (유동자산 − 재고자산) ÷ 유동부채 × 100 |
 | 영업이익률 | 영업이익 ÷ 매출액 × 100 |
+| 매출총이익률 | (매출액 − 매출원가) ÷ 매출액 × 100 |
 | ROE | 당기순이익 ÷ 자본총계 × 100 |
 | ROA | 당기순이익 ÷ 총자산 × 100 |
+| 이자보상배율 | 영업이익 ÷ 이자비용 |
 | 매출성장률 | (최신 매출 − 직전 매출) ÷ 직전 매출 × 100 (최소 2개 기간 데이터 필요) |
+
+**이중 계산 검증(환각 방지 핵심 장치)**: 위 9개 지표는 (1) TypeScript로 한 번, (2) Claude의 **Code Execution Tool**(`code_execution_20250825`)로 실제 pandas 코드를 작성·실행시켜 다시 한 번, 총 두 개의 독립된 결정론적 엔진으로 계산한다(`lib/finance/ratios.ts`, `lib/agents/pythonRatioEngine.ts`). LLM은 어느 쪽 계산에도 암산으로 관여하지 않는다 — TypeScript는 순수 함수, Python 쪽은 Claude가 코드를 작성하지만 최종 숫자는 실행된 코드의 stdout(JSON)을 그대로 파싱한 값이다. 두 결과가 오차범위(0.05) 내로 일치할 때만 화면에 "✓ TypeScript ↔ Python(pandas) 이중 계산 검증 완료" 배지가 표시되며, 실행된 실제 코드와 stdout을 그대로 펼쳐볼 수 있다. Python 호출이 실패(네트워크 오류, 파싱 실패 등)하면 조용히 TypeScript 값으로 폴백하고 검증 배지 없이 표시한다.
 
 **리스크 식별 규칙**:
 - 입력: 위에서 계산된 재무비율 + 원문 소스 청크만 (외부 지식/추측 금지, 시스템 프롬프트로 강제)
@@ -168,7 +173,7 @@ LLM을 호출하지 않는 결정론적 파싱 단계이며, 모든 출력은 �
 
 | 화면 | 경로 | 요구사항 |
 |---|---|---|
-| 업로드/결과 | `/` | 파일 드롭존 + URL 입력 리스트, 생성 버튼, 4단계 진행률 실시간 표시(NDJSON 스트림 기반), 완료 후 리포트 렌더링, 로그인 시에만 "리포트 저장" 버튼 노출 |
+| 업로드/결과 | `/` | 파일 드롭존 + URL 입력 리스트, 생성 버튼, 4단계 진행률 실시간 표시(NDJSON 스트림 기반), 완료 후 리포트 렌더링(ROI 배너 → Executive Summary → 재무 현황 스냅샷 → Risk Radar → Next Steps → 부록/출처 순), 로그인 시에만 "리포트 저장" 버튼 노출, "인쇄/PDF로 저장" 버튼으로 실무 배포용 인쇄 레이아웃 제공 |
 | 로그인 | `/login` | 이메일 매직 링크 입력만 지원 (비밀번호 필드 없음) |
 | 인증 콜백 | `/auth/confirm` | 매직 링크 클릭 후 세션 확립, 완료 시 홈으로 리다이렉트 |
 | 리포트 목록 | `/reports` | 로그인한 본인 소유 리포트만 최신순 표시 (RLS로 강제) |
@@ -208,7 +213,8 @@ LLM을 호출하지 않는 결정론적 파싱 단계이며, 모든 출력은 �
 | 4단계 Multi-Agent 아키텍처 | ✅ | Collector → Financial&Risk → Fact-Checker → Publisher, PRD 설계 그대로 |
 | PDF/Excel 드롭존, URL 입력 | ✅ | `FileDropzone`, `UrlInputList` |
 | 표 구조 보존 파싱 | ✅ | PDF는 페이지 단위(`n페이지`), Excel은 행 단위로 위치 기록 |
-| 재무비율(부채비율·유동비율·영업이익률·ROE·ROA·매출성장률) | ✅ (계산 방식은 7.2 참고) | `lib/finance/ratios.ts` |
+| 재무비율(부채비율·유동비율·영업이익률·ROE·ROA·매출성장률 등 9개) | ✅ | `lib/finance/ratios.ts`. 화면에 "재무 현황 스냅샷" 카드로도 노출(`FinancialSnapshot.tsx`) |
+| **Python(Pandas) 연동으로 재무비율 계산** | ✅ | 당초 PRD가 요구한 "LLM이 직접 계산하지 않고 Python 도구를 호출"을 Anthropic **Code Execution Tool**로 실제 구현. TypeScript 계산과 독립적으로 pandas 코드를 실행해 교차검증하고, 실행된 코드·stdout을 UI에서 그대로 확인 가능(`lib/agents/pythonRatioEngine.ts`, `RatioVerificationBadge.tsx`) — 자세한 내용은 5.3 |
 | 재무/시장/운영 3대 리스크 스코어 | ✅ | `RiskRadarScores { financial, market, operational }` |
 | 원문 근거 1:1 매핑 및 환각 검증 | ✅ (오히려 더 엄격) | 청크 id 실존 여부를 코드로 먼저 확인 후, Claude가 주장 vs 원문을 대조해 supported/partially_supported/unsupported 판정. 근거 없는 주장은 최종본에서 제외 |
 | 3줄 Executive Summary / Next Steps 3가지 | ✅ | zod 스키마로 정확히 3개 강제 |
@@ -218,7 +224,6 @@ LLM을 호출하지 않는 결정론적 파싱 단계이며, 모든 출력은 �
 
 | PRD 명시 | 실제 구현 | 차이 |
 |---|---|---|
-| Python (Pandas, pdfplumber) + Code Interpreter | TypeScript 계산 유틸 (`pdf-parse`, `xlsx`) | Python 실행 환경 없이 Next.js 서버에서 직접 계산 |
 | LangChain / LangGraph | 없음 — `app/api/analyze/route.ts`에서 함수 호출 순서로 직접 오케스트레이션 | 별도 프레임워크 없이 커스텀 파이프라인 |
 | Claude 3.5 Sonnet & Haiku (모델 티어링) | 단일 모델(`CLAUDE_MODEL` 환경변수, 기본값 `claude-sonnet-5`)만 사용 | 비용 절감용 Haiku 이원화 전략 미적용 |
 | Supabase (PostgreSQL, Vector DB) | Supabase Postgres만 사용 (reports 테이블 + RLS) | 벡터DB/임베딩 저장 없음 → Fact-Checker는 RAG 검색이 아니라 청크 id 직접 대조 방식 |
@@ -231,3 +236,6 @@ LLM을 호출하지 않는 결정론적 파싱 단계이며, 모든 출력은 �
 - **MOCK_LLM 모드** — API 키 없이 재무비율 임계값 기반 목업 응답으로 전체 파이프라인/UI를 무료로 검증 가능
 - **SSRF 가드** (`lib/parsers/url-guard.ts`) — 뉴스 URL 입력 시 내부망 접근 등을 차단하는 보안 처리
 - **excludedClaims** — 근거 부족으로 최종본에서 제외된 주장을 별도로 노출하는 투명성 기능
+- **TS ↔ Python 이중 계산 검증 배지** — 실행된 pandas 코드와 stdout을 그대로 펼쳐볼 수 있는 `RatioVerificationBadge`
+- **ROI 배너** — 파이프라인 처리 시간을 실측(`processingTimeMs`)해 "8시간 → N분" 형태로 절감 효과를 정량 표시(`lib/roi.ts`, `ROIBanner.tsx`)
+- **인쇄/PDF 대응 레이아웃** — 실무 배포를 고려한 `@media print` 스타일 및 "인쇄/PDF로 저장" 버튼

@@ -1,5 +1,6 @@
 import { callClaudeJSON } from "@/lib/claude";
 import { computeFinancialRatios } from "@/lib/finance/ratios";
+import { computeRatiosViaPython, mergeRatioVerification } from "@/lib/agents/pythonRatioEngine";
 import { RiskDraftSchema } from "@/lib/types";
 import type {
   FinancialLineItem,
@@ -98,7 +99,9 @@ export async function runFinancialRiskAgent(
   chunks: SourceChunk[],
   lineItems: FinancialLineItem[],
 ): Promise<FinancialRiskResult> {
-  const ratios = computeFinancialRatios(lineItems);
+  const tsRatios = computeFinancialRatios(lineItems);
+  const pythonResult = await computeRatiosViaPython(lineItems);
+  const ratios = mergeRatioVerification(tsRatios, pythonResult);
 
   const prompt = `# 계산된 재무비율\n${formatRatiosForPrompt(ratios)}\n\n# 소스 청크\n${formatChunksForPrompt(
     chunks,

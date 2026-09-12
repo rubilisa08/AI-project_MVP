@@ -44,6 +44,7 @@ export async function POST(request: Request) {
       const encoder = new TextEncoder();
       const push = (event: PipelineEvent) => controller.enqueue(encoder.encode(ndjson(event)));
       let currentStage: PipelineStage = "collector";
+      const startedAt = Date.now();
 
       try {
         currentStage = "collector";
@@ -95,7 +96,7 @@ export async function POST(request: Request) {
         });
         push({ type: "stage", stage: "publisher", status: "done" });
 
-        push({ type: "result", report });
+        push({ type: "result", report: { ...report, processingTimeMs: Date.now() - startedAt } });
       } catch (error) {
         push({
           type: "error",
