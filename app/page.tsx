@@ -4,6 +4,7 @@ import { useState } from "react";
 import { FileDropzone } from "@/components/FileDropzone";
 import { PipelineProgress, type StageStatus } from "@/components/PipelineProgress";
 import { ReportView } from "@/components/ReportView";
+import { SaveReportButton } from "@/components/SaveReportButton";
 import { UrlInputList } from "@/components/UrlInputList";
 import type { PipelineEvent, PipelineStage, Report } from "@/lib/types";
 
@@ -140,7 +141,10 @@ export default function Home() {
       )}
 
       {report && (
-        <section className="rounded-2xl border border-zinc-200 p-6 dark:border-zinc-800">
+        <section className="flex flex-col gap-4 rounded-2xl border border-zinc-200 p-6 dark:border-zinc-800">
+          <div className="flex justify-end">
+            <SaveReportButton report={report} />
+          </div>
           <ReportView report={report} />
         </section>
       )}

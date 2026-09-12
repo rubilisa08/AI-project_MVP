@@ -28,12 +28,18 @@
 
 ```bash
 npm install
-cp .env.example .env.local   # ANTHROPIC_API_KEY 입력
+cp .env.example .env.local   # ANTHROPIC_API_KEY, Supabase URL/anon key 입력
 npm run dev
 ```
 
+Supabase는 프로젝트를 만든 뒤 대시보드의 **SQL Editor**에서 [`supabase/schema.sql`](supabase/schema.sql)을
+한 번 실행하고, **Settings → API**에서 Project URL과 anon(publishable) key를 `.env.local`에 넣으면 됩니다.
+service_role 키는 이 앱에서 쓰지 않습니다.
+
 `http://localhost:3000` 접속 후 PDF/Excel 파일이나 뉴스 URL을 업로드하고 "브리핑 생성하기"를
-누르면 4단계 파이프라인 진행 상황이 실시간으로 표시됩니다(NDJSON 스트리밍).
+누르면 4단계 파이프라인 진행 상황이 실시간으로 표시됩니다(NDJSON 스트리밍). 로그인(매직 링크)하면
+생성된 리포트를 저장하고 `/reports`에서 다시 볼 수 있습니다 — 로그인 없이도 브리핑 생성 자체는
+그대로 체험할 수 있습니다.
 
 ### API 키 없이 먼저 확인하기 (Mock 모드)
 
@@ -53,49 +59,34 @@ npm run dev
 ```
 app/page.tsx              업로드 UI + 결과 렌더링
 app/api/analyze/route.ts  파이프라인 오케스트레이션, NDJSON 스트리밍
+app/login/page.tsx        매직 링크 로그인
+app/auth/confirm/route.ts 매직 링크 콜백 (세션 확립)
+app/reports/              내 리포트 목록/상세 (Supabase 조회, RLS로 본인 것만)
+proxy.ts                  매 요청마다 Supabase 세션 쿠키 갱신 (Next 16의 middleware 개칭)
 lib/types.ts               공유 타입 + zod 스키마
 lib/claude.ts               Anthropic 구조화 출력 헬퍼 (tool use + zod 검증 + 재시도)
 lib/parsers/                pdf.ts / excel.ts / news.ts / chunk.ts / url-guard.ts(SSRF 가드)
 lib/finance/ratios.ts       결정론적 재무비율 계산
 lib/agents/                 collector / financialRisk / factChecker / publisher
+lib/supabase/               client.ts(브라우저) / server.ts(서버 컴포넌트·라우트)
 components/                 업로드 UI, 파이프라인 진행 표시, 리포트 뷰(용어 툴팁·출처 하이라이팅 포함)
+supabase/schema.sql         reports 테이블 + RLS 정책 (SQL Editor에서 1회 실행)
 ```
+
+## Supabase 연동
+
+- **저장**: 리포트 생성 후 로그인 상태면 "리포트 저장" 버튼으로 `reports` 테이블에 저장합니다
+  (`report_json`에 [lib/types.ts](lib/types.ts)의 `Report` 전체를 그대로 저장 — 별도 `sources`
+  테이블 없이 상세 페이지를 그대로 복원).
+- **인증**: 비밀번호 없는 매직 링크(이메일 OTP)만 지원합니다.
+- **RLS**: `reports`는 `auth.uid() = user_id` 정책으로 본인 행만 select/insert/delete 가능하고,
+  리포트는 수정하지 않는 스냅샷으로 취급해 update 정책은 없습니다. anon key는 노출돼도 안전하지만
+  service_role 키는 이 앱 어디에도 사용하지 않습니다.
 
 ## 알려진 한계 (MVP 범위)
 
-- **영속화 없음**: 현재 리포트는 클라이언트 세션에만 존재하며 새로고침하면 사라집니다. 아래
-  "다음 단계"에 Supabase 연동 설계를 정리했습니다.
-- **인증 없음**: 단일 사용자 데모 기준입니다.
+- **원본 파일 미보관**: 생성된 리포트(JSON)는 저장되지만, 업로드한 PDF/Excel 원본은 Storage에
+  저장하지 않습니다 — 파싱 후 버려집니다.
 - **재무 라벨 인식**: 엑셀에서 매출액/영업이익/당기순이익/자산총계/부채총계/자본총계/유동자산/
   유동부채 등 한글·영문 표준 라벨만 인식합니다 (`lib/finance/ratios.ts`의 `KNOWN_LINE_ITEMS`).
-
-## 다음 단계: Supabase 연동 설계 (미구현)
-
-Supabase 프로젝트 생성 후 아래 스키마로 영속화를 추가할 수 있도록 설계했습니다.
-
-```sql
--- 사용자당 여러 리포트
-create table reports (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid references auth.users(id) not null,
-  headline text not null,
-  report_json jsonb not null,      -- lib/types.ts의 Report 전체를 그대로 저장
-  created_at timestamptz default now()
-);
-
--- 원문 소스 파일 메타데이터 (실제 파일은 Supabase Storage 버킷에 저장)
-create table sources (
-  id uuid primary key default gen_random_uuid(),
-  report_id uuid references reports(id) on delete cascade,
-  label text not null,
-  type text check (type in ('pdf', 'excel', 'news')),
-  storage_path text  -- Storage 버킷 경로 (뉴스 URL인 경우 null)
-);
-
-alter table reports enable row level security;
-create policy "사용자는 본인 리포트만" on reports
-  for all using (auth.uid() = user_id);
-```
-
-연동 시 변경 지점: `app/api/analyze/route.ts`에서 파이프라인 완료 후 `reports` 테이블에 insert,
-업로드 파일은 파싱 전에 Storage에 먼저 업로드. 프런트는 리포트 목록/상세 페이지를 추가.
+- **리포트 공유 없음**: 저장된 리포트는 본인만 볼 수 있고, 팀 공유/코멘트 기능은 아직 없습니다.
