@@ -1,3 +1,4 @@
+import { DOMMatrix, ImageData, Path2D } from "@napi-rs/canvas";
 import { PDFParse } from "pdf-parse";
 import type { ParsedSource, SourceChunk } from "@/lib/types";
 import { splitIntoChunks } from "./chunk";
@@ -6,10 +7,26 @@ import { splitIntoChunks } from "./chunk";
 // file path, which breaks under Next.js/Turbopack ("Cannot find module
 // .../pdf.worker.mjs"). Pointing it at the bare package specifier instead
 // lets Node's own module resolution find the real file in node_modules,
-// bypassing Turbopack's chunk-relative path entirely. (pdf-parse also ships a
-// "pdf-parse/worker" helper for this, but it pulls in @napi-rs/canvas native
-// bindings that aren't installed here — not worth it just for the worker src.)
+// bypassing Turbopack's chunk-relative path entirely.
 PDFParse.setWorker("pdfjs-dist/legacy/build/pdf.worker.mjs");
+
+// pdfjs builds glyph outlines (embedded/Type3 fonts) using the Canvas 2D
+// DOMMatrix/Path2D/ImageData globals even during plain text extraction, not
+// just rendering. Those only exist in browsers, so real-world PDFs with such
+// fonts crash with "DOMMatrix is not defined" under Node. pdf-parse's own
+// "pdf-parse/worker" helper works around this the same way, but that module
+// also wires up worker-thread message handling meant for pdfjs's internal
+// worker — not safe to import wholesale here, so we replicate just the
+// polyfill assignment.
+if (typeof globalThis.DOMMatrix === "undefined") {
+  (globalThis as unknown as { DOMMatrix: typeof DOMMatrix }).DOMMatrix = DOMMatrix;
+}
+if (typeof globalThis.Path2D === "undefined") {
+  (globalThis as unknown as { Path2D: typeof Path2D }).Path2D = Path2D;
+}
+if (typeof globalThis.ImageData === "undefined") {
+  (globalThis as unknown as { ImageData: typeof ImageData }).ImageData = ImageData;
+}
 
 export async function parsePdf(sourceId: string, label: string, buffer: Buffer): Promise<ParsedSource> {
   const parser = new PDFParse({ data: buffer });

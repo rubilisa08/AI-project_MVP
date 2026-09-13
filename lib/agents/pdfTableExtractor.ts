@@ -83,7 +83,7 @@ export async function extractPdfFinancialLineItems(
   label: string,
   buffer: Buffer,
 ): Promise<PdfExtractionResult | null> {
-  if (isMockMode()) return null;
+  if (isMockMode()) return buildMockPdfExtraction(sourceId, label);
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return null;
@@ -148,4 +148,61 @@ export async function extractPdfFinancialLineItems(
   } catch {
     return null;
   }
+}
+
+/** MOCK_LLM=true fallback: fabricates a plausible extracted line-item set (a
+ *  distressed-company profile — low liquidity, high leverage — mirroring
+ *  sample_data/financial_sample.xlsx) so a PDF-only upload can exercise the
+ *  full pipeline (ratios, risk detection, fact-checking) without an API key.
+ *  A real extraction never runs in mock mode, so these numbers never reflect
+ *  the actual uploaded PDF. */
+function buildMockPdfExtraction(sourceId: string, label: string): PdfExtractionResult {
+  const MOCK_ITEMS: { key: string; label: string; period: string; value: number; page: number }[] = [
+    { key: "revenue", label: "매출액", period: "2024", value: 95000, page: 4 },
+    { key: "revenue", label: "매출액", period: "2023", value: 110000, page: 4 },
+    { key: "operatingIncome", label: "영업이익", period: "2024", value: 3800, page: 4 },
+    { key: "operatingIncome", label: "영업이익", period: "2023", value: 9500, page: 4 },
+    { key: "netIncome", label: "당기순이익", period: "2024", value: 1200, page: 4 },
+    { key: "netIncome", label: "당기순이익", period: "2023", value: 6000, page: 4 },
+    { key: "totalAssets", label: "자산총계", period: "2024", value: 210000, page: 5 },
+    { key: "totalAssets", label: "자산총계", period: "2023", value: 195000, page: 5 },
+    { key: "totalLiabilities", label: "부채총계", period: "2024", value: 155000, page: 5 },
+    { key: "totalLiabilities", label: "부채총계", period: "2023", value: 135000, page: 5 },
+    { key: "totalEquity", label: "자본총계", period: "2024", value: 55000, page: 5 },
+    { key: "totalEquity", label: "자본총계", period: "2023", value: 60000, page: 5 },
+    { key: "currentAssets", label: "유동자산", period: "2024", value: 42000, page: 5 },
+    { key: "currentAssets", label: "유동자산", period: "2023", value: 50000, page: 5 },
+    { key: "currentLiabilities", label: "유동부채", period: "2024", value: 58000, page: 5 },
+    { key: "currentLiabilities", label: "유동부채", period: "2023", value: 45000, page: 5 },
+    { key: "costOfGoodsSold", label: "매출원가", period: "2024", value: 70000, page: 4 },
+    { key: "costOfGoodsSold", label: "매출원가", period: "2023", value: 75000, page: 4 },
+    { key: "inventory", label: "재고자산", period: "2024", value: 15000, page: 5 },
+    { key: "inventory", label: "재고자산", period: "2023", value: 12000, page: 5 },
+    { key: "interestExpense", label: "이자비용", period: "2024", value: 2500, page: 6 },
+    { key: "interestExpense", label: "이자비용", period: "2023", value: 2000, page: 6 },
+  ];
+
+  const lineItems: FinancialLineItem[] = [];
+  const extraChunks: SourceChunk[] = [];
+
+  MOCK_ITEMS.forEach((item, idx) => {
+    const chunkId = `${sourceId}-pdftable-${idx + 1}`;
+    extraChunks.push({
+      id: chunkId,
+      sourceId,
+      sourceLabel: label,
+      sourceType: "pdf",
+      location: `${item.page}페이지 (표)`,
+      text: `${item.label}: ${item.period}=${item.value.toLocaleString("ko-KR")}`,
+    });
+    lineItems.push({
+      key: item.key,
+      label: item.label,
+      period: item.period,
+      value: item.value,
+      sourceChunkId: chunkId,
+    });
+  });
+
+  return { lineItems, extraChunks };
 }
