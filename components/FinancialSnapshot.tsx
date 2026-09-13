@@ -59,6 +59,7 @@ export function FinancialSnapshot({ ratios }: { ratios: FinancialRatios }) {
 
   const dataQuality = ratios.dataQuality;
   const balanceSheetIssue = dataQuality?.balanceSheetCheck && !dataQuality.balanceSheetCheck.balanced;
+  const balanceSheetDisagreement = dataQuality?.balanceSheetVerified === false;
   const hasAnomalies = (dataQuality?.anomalies.length ?? 0) > 0;
 
   return (
@@ -69,6 +70,8 @@ export function FinancialSnapshot({ ratios }: { ratios: FinancialRatios }) {
             <p className="font-medium">
               ⚠ 재무제표 정합성 오류: 자산총계가 부채총계+자본총계와{" "}
               {Math.abs(dataQuality.balanceSheetCheck.diffAmount).toLocaleString("ko-KR")}만큼 불일치합니다.
+              {balanceSheetDisagreement &&
+                " (TypeScript와 Python 이중 계산이 서로 다른 결론을 내려 보수적으로 표시된 값입니다 — 원본 자료를 직접 확인하세요.)"}
             </p>
           )}
           {hasAnomalies && (

@@ -104,9 +104,33 @@ export async function runFinancialRiskAgent(
   const ratios = mergeRatioVerification(tsRatios, pythonResult);
 
   const tsDataQuality = computeDataQuality(lineItems);
+  const tsCheck = tsDataQuality.balanceSheetCheck;
+  const pyCheck = pythonResult?.balanceSheetCheck;
+
+  let balanceSheetCheck = tsCheck;
+  let balanceSheetVerified: boolean | undefined;
+
+  if (tsCheck && pyCheck) {
+    const tolerance = Math.max(1, Math.abs(tsCheck.diffAmount) * 0.05);
+    balanceSheetVerified =
+      pyCheck.balanced === tsCheck.balanced && Math.abs(pyCheck.diffAmount - tsCheck.diffAmount) <= tolerance;
+    if (!balanceSheetVerified) {
+      // TS and Python disagree on whether the balance sheet actually balances. Never silently
+      // trust either side's "balanced: true" here — default to the flagged (false) state so a
+      // real discrepancy can't be masked by picking the wrong engine's answer.
+      balanceSheetCheck = {
+        balanced: false,
+        diffAmount: Math.abs(pyCheck.diffAmount) >= Math.abs(tsCheck.diffAmount) ? pyCheck.diffAmount : tsCheck.diffAmount,
+      };
+    }
+  } else if (pyCheck && !tsCheck) {
+    balanceSheetCheck = pyCheck;
+  }
+
   ratios.dataQuality = {
     anomalies: tsDataQuality.anomalies,
-    balanceSheetCheck: pythonResult?.balanceSheetCheck ?? tsDataQuality.balanceSheetCheck,
+    balanceSheetCheck,
+    balanceSheetVerified,
   };
 
   const prompt = `# 계산된 재무비율\n${formatRatiosForPrompt(ratios)}\n\n# 소스 청크\n${formatChunksForPrompt(

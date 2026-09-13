@@ -247,7 +247,13 @@ export function mergeRatioVerification(
   for (const key of RATIO_KEYS) {
     const tsValue = tsRatios[key as keyof FinancialRatios];
     const pyValue = python.ratios[key];
-    if (typeof tsValue === "number" && typeof pyValue === "number" && Math.abs(tsValue - pyValue) > TOLERANCE) {
+    const tsHas = typeof tsValue === "number";
+    const pyHas = typeof pyValue === "number";
+    if (tsHas !== pyHas) {
+      // One engine produced this ratio and the other didn't (code-execution miss, parsing
+      // gap, etc.) — that's not a confirmed cross-check, so never report it as matched.
+      matched = false;
+    } else if (tsHas && pyHas && Math.abs((tsValue as number) - (pyValue as number)) > TOLERANCE) {
       matched = false;
     }
   }

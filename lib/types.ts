@@ -34,6 +34,10 @@ export interface RatioBasisEntry {
 export interface DataQuality {
   /** 자산총계 = 부채총계 + 자본총계 항등식 검증. 세 값이 모두 없으면 undefined. */
   balanceSheetCheck?: { balanced: boolean; diffAmount: number };
+  /** True when TS와 Python이 독립적으로 계산해 일치했을 때, false는 두 엔진이 서로 다른 결론을
+   *  내렸을 때(이 경우 balanceSheetCheck.balanced는 보수적으로 false로 강제됨), undefined는
+   *  둘 중 한쪽만 계산 가능해 교차검증 자체가 불가능했을 때. */
+  balanceSheetVerified?: boolean;
   /** 전기 대비 비정상적으로 급변한 항목에 대한 사람이 읽을 수 있는 경고 메시지. */
   anomalies: string[];
 }
