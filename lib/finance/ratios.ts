@@ -110,6 +110,13 @@ function round2(n: number): number {
 
 const ANOMALY_THRESHOLD_PERCENT = 300;
 
+// Profit lines swing wildly on a small base (e.g. a cyclical downturn year), so a
+// plain 300% rule flags perfectly real results. Unit/scale mistakes are powers of
+// ten, so for profit lines only a 100x move is treated as suspicious, and a sign
+// flip (loss -> profit) is skipped since the percentage is meaningless there.
+const PROFIT_KEYS = new Set(["operatingIncome", "netIncome"]);
+const PROFIT_ANOMALY_THRESHOLD_PERCENT = 10_000;
+
 /**
  * Deterministic data-quality checks the LLM never touches: does the balance
  * sheet actually balance (자산총계 = 부채총계 + 자본총계), and did any line
@@ -134,10 +141,13 @@ export function computeDataQuality(items: FinancialLineItem[]): DataQuality {
     const series = latestTwoPeriods(items, key);
     if (series.length < 2 || series[1].value === 0) continue;
     const [latest, prev] = series;
+    const isProfit = PROFIT_KEYS.has(key);
+    if (isProfit && Math.sign(latest.value) !== Math.sign(prev.value)) continue;
     const changePercent = round2(((latest.value - prev.value) / Math.abs(prev.value)) * 100);
-    if (Math.abs(changePercent) > ANOMALY_THRESHOLD_PERCENT) {
+    const threshold = isProfit ? PROFIT_ANOMALY_THRESHOLD_PERCENT : ANOMALY_THRESHOLD_PERCENT;
+    if (Math.abs(changePercent) > threshold) {
       dataQuality.anomalies.push(
-        `${latest.label}이(가) 전기 대비 ${changePercent}% 변동했습니다 (이상치 의심)`,
+        `${latest.label} 값이 전기 대비 ${changePercent}% 급변했습니다 — 단위·입력 오류가 아닌지 원문 확인을 권장합니다`,
       );
     }
   }

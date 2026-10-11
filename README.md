@@ -22,7 +22,7 @@
    (1) TypeScript 계산 유틸, (2) Claude의 **Code Execution Tool**로 실제 pandas 코드를 작성·실행시킨
    결과. LLM은 어느 계산에도 암산으로 관여하지 않으며, 두 값이 일치할 때만 화면에 검증 배지가 뜨고
    실행된 코드와 stdout을 그대로 펼쳐볼 수 있습니다. 같은 계산 안에서 **회계 항등식(자산총계 = 부채
-   총계 + 자본총계)**도 함께 검증하고, 전기 대비 ±300%를 넘는 이상 변동은 별도로 경고합니다 — 숫자가
+   총계 + 자본총계)**도 함께 검증하고, 전기 대비 ±300%를 넘는 급변(이익 계정은 100배 초과, 흑자↔적자 전환 제외)은 원문 확인을 권장하는 경고로 표시합니다 — 숫자가
    맞는지뿐 아니라 원본 데이터 자체가 말이 되는지까지 확인합니다. 계산된 수치 + 관련 소스 청크를
    Claude에 전달해 리스크 요인을 구조화된 JSON으로 추출합니다.
    ([lib/finance/ratios.ts](lib/finance/ratios.ts), [lib/agents/pythonRatioEngine.ts](lib/agents/pythonRatioEngine.ts), [lib/agents/financialRisk.ts](lib/agents/financialRisk.ts))
