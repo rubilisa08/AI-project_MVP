@@ -109,7 +109,7 @@ export default function Home() {
           AI Business Briefing &amp; Intelligence Publisher
         </p>
         <h1 className="mt-1 text-3xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
-          5분 만에 끝나는 C-Level 브리핑
+          근거 있는 AI 재무 브리핑
         </h1>
         <p className="mt-2 max-w-2xl text-sm text-zinc-600 dark:text-zinc-400">
           공시자료·계약서(PDF), 재무제표(Excel), 관련 뉴스 URL을 업로드하면 Collector → Financial&amp;Risk →
