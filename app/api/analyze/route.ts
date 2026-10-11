@@ -1,4 +1,5 @@
 import { collect } from "@/lib/agents/collector";
+import { DartRequestSchema, type DartRequest } from "@/lib/dart/financials";
 import { runFactChecker } from "@/lib/agents/factChecker";
 import { runFinancialRiskAgent } from "@/lib/agents/financialRisk";
 import { runPublisher } from "@/lib/agents/publisher";
@@ -28,11 +29,13 @@ export async function POST(request: Request) {
   let formData: FormData;
   let fileEntries: File[];
   let urls: string[];
+  let dartRaw: FormDataEntryValue | null;
 
   try {
     formData = await request.formData();
     fileEntries = formData.getAll("files").filter((f): f is File => f instanceof File);
     urls = parseUrls(formData.get("urls"));
+    dartRaw = formData.get("dart");
   } catch (error) {
     // Surfaces the real cause (e.g. a module that fails to load in this
     // runtime) instead of a bare framework 500 with no body.
@@ -42,8 +45,25 @@ export async function POST(request: Request) {
     );
   }
 
-  if (fileEntries.length === 0 && urls.length === 0) {
-    return Response.json({ error: "파일 또는 URL을 1개 이상 입력하세요." }, { status: 400 });
+  let dart: DartRequest | null = null;
+  if (typeof dartRaw === "string" && dartRaw.trim()) {
+    let parsedDart: ReturnType<typeof DartRequestSchema.safeParse>;
+    try {
+      parsedDart = DartRequestSchema.safeParse(JSON.parse(dartRaw));
+    } catch {
+      return Response.json({ error: "DART 조회 요청 형식이 올바르지 않습니다." }, { status: 400 });
+    }
+    if (!parsedDart.success) {
+      return Response.json(
+        { error: "DART 조회 조건(회사명, 사업연도, 보고서 종류)을 확인하세요." },
+        { status: 400 },
+      );
+    }
+    dart = parsedDart.data;
+  }
+
+  if (fileEntries.length === 0 && urls.length === 0 && !dart) {
+    return Response.json({ error: "파일, URL 또는 DART 조회 조건을 1개 이상 입력하세요." }, { status: 400 });
   }
 
   for (const file of fileEntries) {
@@ -68,7 +88,7 @@ export async function POST(request: Request) {
             buffer: Buffer.from(await file.arrayBuffer()),
           })),
         );
-        const { sources, lineItems } = await collect(files, urls);
+        const { sources, lineItems } = await collect(files, urls, dart);
         const allChunks = sources.flatMap((s) => s.chunks);
         const chunkMap = new Map(allChunks.map((c) => [c.id, c]));
         push({

@@ -1,3 +1,4 @@
+import { collectFromDart, type DartRequest } from "@/lib/dart/financials";
 import { parseExcel } from "@/lib/parsers/excel";
 import { parseNewsUrl } from "@/lib/parsers/news";
 import type { FinancialLineItem, ParsedSource } from "@/lib/types";
@@ -22,7 +23,11 @@ function extensionOf(name: string): string {
  * uploaded file / news URL into citation-friendly source chunks so downstream
  * agents can ground every claim in a specific chunk id.
  */
-export async function collect(files: UploadedFile[], urls: string[]): Promise<CollectedInput> {
+export async function collect(
+  files: UploadedFile[],
+  urls: string[],
+  dart: DartRequest | null = null,
+): Promise<CollectedInput> {
   const sources: ParsedSource[] = [];
   const lineItems: FinancialLineItem[] = [];
   let counter = 0;
@@ -61,6 +66,13 @@ export async function collect(files: UploadedFile[], urls: string[]): Promise<Co
     counter += 1;
     const sourceId = `s${counter}`;
     const { source, lineItems: items } = await parseNewsUrl(sourceId, url);
+    sources.push(source);
+    lineItems.push(...items);
+  }
+
+  if (dart) {
+    counter += 1;
+    const { source, lineItems: items } = await collectFromDart(`s${counter}`, dart);
     sources.push(source);
     lineItems.push(...items);
   }

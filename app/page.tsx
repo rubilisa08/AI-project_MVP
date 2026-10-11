@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { DartInput, type DartForm } from "@/components/DartInput";
 import { FileDropzone } from "@/components/FileDropzone";
 import { PipelineProgress, type StageStatus } from "@/components/PipelineProgress";
 import { ReportView } from "@/components/ReportView";
@@ -29,7 +30,15 @@ export default function Home() {
   const [report, setReport] = useState<Report | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const canSubmit = !isRunning && (files.length > 0 || urls.some((u) => u.trim() !== ""));
+  const [dart, setDart] = useState<DartForm>({
+    company: "",
+    year: new Date().getFullYear() - 1,
+    report: "annual",
+    fsDiv: "CFS",
+  });
+
+  const hasDart = dart.company.trim() !== "";
+  const canSubmit = !isRunning && (files.length > 0 || urls.some((u) => u.trim() !== "") || hasDart);
 
   const applyEvent = (event: PipelineEvent) => {
     if (event.type === "stage") {
@@ -61,6 +70,7 @@ export default function Home() {
     files.forEach((file) => formData.append("files", file));
     const cleanUrls = urls.map((u) => u.trim()).filter(Boolean);
     formData.append("urls", JSON.stringify(cleanUrls));
+    if (hasDart) formData.append("dart", JSON.stringify({ ...dart, company: dart.company.trim() }));
 
     try {
       const res = await fetch("/api/analyze", { method: "POST", body: formData });
@@ -119,6 +129,10 @@ export default function Home() {
         <div>
           <h2 className="mb-2 text-sm font-semibold text-zinc-700 dark:text-zinc-200">뉴스 URL</h2>
           <UrlInputList urls={urls} onChange={setUrls} />
+        </div>
+        <div className="md:col-span-2">
+          <h2 className="mb-2 text-sm font-semibold text-zinc-700 dark:text-zinc-200">DART 자동 수집</h2>
+          <DartInput value={dart} onChange={setDart} />
         </div>
         <div className="md:col-span-2">
           <button

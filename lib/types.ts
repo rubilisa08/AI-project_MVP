@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export type SourceType = "pdf" | "excel" | "news";
+export type SourceType = "pdf" | "excel" | "news" | "dart";
 
 export interface SourceChunk {
   id: string;
