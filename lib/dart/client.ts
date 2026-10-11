@@ -50,8 +50,9 @@ export async function dartFetch(path: string, params: Record<string, string> = {
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return Buffer.from(await res.arrayBuffer());
   } catch (error) {
-    const reason = error instanceof Error ? error.message : String(error);
-    throw new Error(`OpenDART 서버 요청에 실패했습니다 (${reason}). 잠시 후 다시 시도하세요.`);
+    const timedOut = controller.signal.aborted;
+    const reason = timedOut ? `${TIMEOUT_MS / 1000}초 안에 응답이 없었습니다` : error instanceof Error ? error.message : String(error);
+    throw new Error(`OpenDART(${path}) 요청에 실패했습니다 — ${reason}. 잠시 후 다시 시도하세요.`);
   } finally {
     clearTimeout(timer);
   }
